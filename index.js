@@ -31,6 +31,8 @@ const DBT_CLOUD_API = axios.create({
   }
 });
 
+const ARTIFACTS = ['manifest.json', 'catalog.json']
+
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -111,11 +113,11 @@ async function getJobArtifacts(accountId, jobId) {
     fs.mkdirSync(saveDir);
   }
 
-  const artifactNames = ['manifest.json', 'catelog.json']
-  for (const artifactName of artifactNames) {
-    let res = await DBT_CLOUD_API.get(`/accounts/${accountId}/jobs/${jobId}/artifacts/${artifactName}`);
-    core.info(`Saving ${artifactName} in ${saveDir}`)
-    fs.writeFileSync(`${saveDir}/${artifactName}`, JSON.stringify(res.data));
+  for (const artifact of ARTIFACTS) {
+    core.info(`Fetching ${artifact} for the base environment`)
+    let res = await DBT_CLOUD_API.get(`/accounts/${accountId}/jobs/${jobId}/artifacts/${artifact}`);
+    core.info(`Saving ${artifact} in ${saveDir}`)
+    fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
   }
 }
 
@@ -125,11 +127,11 @@ async function getRunArtifacts(accountId, runId) {
     fs.mkdirSync(saveDir);
   }
 
-  const artifactNames = ['manifest.json', 'catelog.json']
-  for (const artifactName of artifactNames) {
-    let res = await DBT_CLOUD_API.get(`/accounts/${accountId}/runs/${runId}/artifacts/${artifactName}`);
-    core.info(`Saving ${artifactName} in ${saveDir}`)
-    fs.writeFileSync(`${saveDir}/${artifactName}`, JSON.stringify(res.data));
+  for (const artifact of ARTIFACTS) {
+    core.info(`Fetching ${artifact} for the current environment`)
+    let res = await DBT_CLOUD_API.get(`/accounts/${accountId}/runs/${runId}/artifacts/${artifact}`);
+    core.info(`Saving ${artifact} in ${saveDir}`)
+    fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
   }
 }
 
