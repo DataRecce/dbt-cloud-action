@@ -1,8 +1,6 @@
 # dbt Cloud action
 
-This action lets you trigger a job run on [dbt Cloud](https://cloud.getdbt.com), fetches the `run_results.json` artifact, and `git checkout`s the branch that was ran by dbt Cloud.
-
-Example usage at [fal-ai/fal_bike_example](https://github.com/fal-ai/fal_bike_example)
+This action lets you trigger a job run on [dbt Cloud](https://cloud.getdbt.com), fetches the `manifest.json` and `catalog.json` artifact, and `git checkout`s the branch that was ran by dbt Cloud.
 
 ## Inputs
 
@@ -11,15 +9,16 @@ Example usage at [fal-ai/fal_bike_example](https://github.com/fal-ai/fal_bike_ex
 - `dbt_cloud_url` - dbt Cloud [API URL](https://docs.getdbt.com/dbt-cloud/api-v2#/) (Default: `https://cloud.getdbt.com`)
 - `dbt_cloud_token` - dbt Cloud [API token](https://docs.getdbt.com/docs/dbt-cloud/dbt-cloud-api/service-tokens)
 - `dbt_cloud_account_id` - dbt Cloud Account ID
-- `dbt_cloud_job_id` - dbt Cloud Job ID
+- `dbt_cloud_base_job_id` - dbt Cloud Job ID for the base environment in Recce
+- `dbt_cloud_current_job_id` - dbt Cloud Job ID for the current environment in
+Recce
 
-We recommend passing sensitive variables as GitHub secrets. [Example usage](https://github.com/fal-ai/fal_bike_example/blob/main/.github/workflows/fal_dbt.yml).
+We recommend passing sensitive variables as GitHub secrets.
 
 ### Action configuration
 
 - `failure_on_error` - Boolean to make the action report a failure when dbt-cloud runs. Mark this as `false` to run fal after the dbt-cloud job.
 - `interval` - The interval between polls in seconds (Default: `30`)
-- `get_artifacts` - Whether run results, needed by fal, are fetched from dbt cloud. If using this action in other contexts this can be set to `false`, useful for jobs which do not generate artifacts.
 
 ### dbt Cloud Job configuration
 
@@ -36,103 +35,93 @@ Use any of the [documented options for the dbt API](https://docs.getdbt.com/dbt-
 - `timeout_seconds_override`
 - `steps_override`: pass a YAML-parseable string. (e.g. `steps_override: '["dbt seed", "dbt run"]'`)
 
-## Create your workflow
-```yaml
-name: Run dbt cloud
-on:
-  workflow_dispatch:
+### Use with [Recce](https://github.com/DataRecce/recce)
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+You can trigger a dbt Cloud run and it will download the artifacts to be able to run your `recce run` command easily in GitHub Actions.
 
-    steps:
-      - uses: fal-ai/dbt-cloud-action@main
-        id: dbt_cloud_run
-        with:
-          dbt_cloud_token: ${{ secrets.DBT_CLOUD_API_TOKEN }}
-          dbt_cloud_account_id: ${{ secrets.DBT_CLOUD_ACCOUNT_ID }}
-          dbt_cloud_job_id: ${{ secrets.DBT_CLOUD_JOB_ID }}
-          failure_on_error: true
-          steps_override: |
-            - dbt seed
-            - dbt run
-```
-
-### Use with [fal](https://github.com/fal-ai/fal)
-
-You can trigger a dbt Cloud run and it will download the artifacts to be able to run your `fal run` command easily in GitHub Actions.
-
-You have to do certain extra steps described here:
+You have to do certain extra steps described, e.g. setting GitHub Action secrets and your warehouse credentials, here:
 
 ```yaml
-name: Run dbt cloud and fal scripts
+name: Recce with dbt cloud
 on:
-  workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 jobs:
-  deploy:
+  check-pull-request:
+    name: Prepare for Recce
     runs-on: ubuntu-latest
-
     steps:
-      # Checkout before downloading artifacts or setting profiles.yml
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: fal-ai/dbt-cloud-action@main
-        id: dbt_cloud_run
+      - uses: actions/setup-python@v5
         with:
-          dbt_cloud_token: ${{ secrets.DBT_CLOUD_API_TOKEN }}
-          dbt_cloud_account_id: ${{ secrets.DBT_ACCOUNT_ID }}
-          dbt_cloud_job_id: ${{ secrets.DBT_CLOUD_JOB_ID }}
-          failure_on_error: false
-
-      - name: Setup profiles.yml
-        shell: python
-        env:
-          contents: ${{ secrets.PROFILES_YML }}
-        run: |
-          import yaml
-          import os
-          import io
-
-          profiles_string = os.getenv('contents')
-          profiles_data = yaml.safe_load(profiles_string)
-
-          with io.open('profiles.yml', 'w', encoding='utf8') as outfile:
-            yaml.dump(profiles_data, outfile, default_flow_style=False, allow_unicode=True)
-
-      - uses: actions/setup-python@v2
-        with:
-          python-version: "3.9.x"
+          python-version: "3.10"
+          cache: "pip"
 
       - name: Install dependencies
-        # Normally would use a `requirements.txt`.
-        run: |
-          pip install dbt-bigquery
-          pip install fal[bigquery]
+        run: pip install -r requirements.txt
 
-      - name: Run fal scripts
+      - name: Trigger the dbt cloud job and fetch artifacts for Recce
+        uses: datarecce/dbt-cloud-action@main
+        id: recce_dbt_cloud_run
+        with:
+          dbt_cloud_token: ${{ secrets.DBT_CLOUD_API_TOKEN }}
+          dbt_cloud_account_id: ${{ secrets.DBT_CLOUD_ACCOUNT_ID }}
+          dbt_cloud_base_job_id: ${{ secrets.DBT_CLOUD_BASE_JOB_ID }}
+          dbt_cloud_current_job_id: ${{ secrets.DBT_CLOUD_CURRENT_JOB_ID }}
+          failure_on_error: true
+
+      - name: Run Recce in cloud mode
         env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_BOT_CHANNEL: ${{ secrets.SLACK_BOT_CHANNEL }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_SCHEMA: "PR_${{ github.event.pull_request.number }}"
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          RECCE_STATE_PASSWORD: ${{ secrets.RECCE_STATE_PASSWORD }}
+        run: recce run --cloud
+
+      - name: Prepare Recce Summary
+        id: recce-summary
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_SCHEMA: "PR_${{ github.event.pull_request.number }}"
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          RECCE_STATE_PASSWORD: ${{ secrets.RECCE_STATE_PASSWORD }}
         run: |
-          # Move to the same code state of the dbt Cloud Job
-          git checkout ${{ steps.dbt_cloud_run.outputs.git_sha }}
-          # TODO: review target in passed profiles.yaml contents
-          fal run --profiles-dir .
+          set -eo pipefail
+
+          recce summary --cloud > recce_summary.md
+
+          # Add next steps message
+          cat << EOF >> recce_summary.md
+
+          ## Next Steps
+          To view detailed Recce results:
+          1. Checkout the PR branch: \`git checkout ${{ github.event.pull_request.head.ref }}\`
+          2. Launch the Recce server: \`recce server --review --cloud\`
+          3. Open http://localhost:8000 in your browser
+          EOF
+
+          # Truncate summary if it exceeds GitHub's comment size limit
+          if [[ $(wc -c < recce_summary.md) -ge 65535 ]]; then
+            truncate -s 65000 recce_summary.md
+            echo "
+            ... (Summary truncated due to size limit)
+            
+            For the full summary, please check the Job Summary page: ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}
+            " >> recce_summary.md
+          fi
+
+      - name: Comment on pull request
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: recce_summary.md
+          comment_tag: recce
 
 ```
-
-#### Getting the correct artifacts from dbt-cloud
-
-fal relies on the generated artifacts from a dbt run step to get model statuses. dbt-cloud only makes these artifacts available after the **last** step finished running.
-
-In order to get the status information that you need for fal, make sure to run the step you are interested in **last**.
-
-For example, this dbt job will provide the `run_results.json` of `dbt docs generate`, which is probably not what you want fal to report about:
-
-![Example run](./example-run.png)
-
-So, you would make `dbt docs generate` run before `dbt run` and leave `dbt run` as the last step.
