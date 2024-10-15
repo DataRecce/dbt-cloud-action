@@ -1,5 +1,5 @@
-name: "dbt Cloud action"
-description: "Runs a dbt Cloud Job specified by Job ID"
+name: "Recce dbt Cloud action"
+description: "Runs a dbt Cloud Job and prepare for Recce specified by Job ID"
 branding:
   icon: "cloud"
   color: "orange"
@@ -14,8 +14,11 @@ inputs:
   dbt_cloud_account_id:
     description: dbt Cloud account ID
     required: true
-  dbt_cloud_job_id:
-    description: dbt Cloud Job ID
+  dbt_cloud_base_job_id:
+    description: dbt Cloud Job ID for the base environment in Recce
+    required: true
+  dbt_cloud_current_job_id:
+    description: dbt Cloud Job ID for the current environment in Recce
     required: true
   interval:
     description: Interval between polls in seconds
@@ -24,10 +27,6 @@ inputs:
   failure_on_error:
     description: Boolean to make the action report a failure when dbt-cloud runs. Mark this as `false` to run fal after the dbt-cloud job.
     required: true
-  get_artifacts:
-    description: Whether run results, needed by fal, are fetched from dbt cloud. If using this action in other contexts this can be set to `false`, useful for jobs which do not generate artifacts.
-    required: false
-    default: true
 
   cause:
     description: Job trigger cause
