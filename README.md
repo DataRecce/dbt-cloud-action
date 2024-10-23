@@ -35,12 +35,14 @@ Use any of the [documented options for the dbt API](https://docs.getdbt.com/dbt-
 - `timeout_seconds_override`
 - `steps_override`: pass a YAML-parseable string. (e.g. `steps_override: '["dbt seed", "dbt run"]'`)
 
-### Use with [Recce](https://github.com/DataRecce/recce)
+## Use with [Recce](https://github.com/DataRecce/recce)
 
 You can trigger a dbt Cloud run and it will download the artifacts to be able to run your `recce run` command easily in GitHub Actions.
 
 You have to do certain extra steps described, e.g. setting GitHub Action secrets and your warehouse credentials, here:
 
+
+### Snowflake Example
 ```yaml
 name: Recce with dbt cloud
 on:
@@ -124,4 +126,108 @@ jobs:
           filePath: recce_summary.md
           comment_tag: recce
 
+```
+
+
+### BigQuery with Service Account Key JSON
+This is the example of authentication via service account key JSON.
+
+Remember to set the secrets in GitHub:
+- `DBT_CLOUD_API_TOKEN`
+- `GCP_SERVICE_ACCOUNT_KEY_JSON`
+- `GH_TOKEN`
+- `RECCE_STATE_PASSWORD`
+
+And set dbt Cloud IDs while configuring the GitHub Action:
+- `dbt_cloud_account_id`
+- `dbt_cloud_base_job_id`
+- `dbt_cloud_current_job_id`
+
+Please check [profile.yml](https://github.com/DataRecce/jaffle-shop-bigquery/blob/main/profiles.yml) and [recce_ci.yml](https://github.com/DataRecce/jaffle-shop-bigquery/blob/main/.github/workflows/recce_ci.yml) in our example repo for more details.
+
+```
+name: Recce with dbt cloud
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-pull-request:
+    name: Prepare for Recce
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Trigger the dbt cloud job and fetch artifacts for Recce
+        uses: datarecce/dbt-cloud-action@main
+        id: recce_dbt_cloud_run
+        with:
+          dbt_cloud_token: ${{ secrets.DBT_CLOUD_API_TOKEN }}
+          dbt_cloud_account_id: 62083
+          dbt_cloud_base_job_id: 747906
+          dbt_cloud_current_job_id: 747907
+          failure_on_error: true
+
+      - uses: "google-github-actions/auth@v2"
+        id: google-auth
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY_JSON }}
+
+      - name: Run Recce in cloud mode
+        env:
+          BQ_PROJECT: ${{ steps.google-auth.outputs.project_id }}
+          BQ_DATASET: recce_ci
+          BQ_KEYFILE_PATH: ${{ steps.google-auth.outputs.credentials_file_path }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          RECCE_STATE_PASSWORD: ${{ secrets.RECCE_STATE_PASSWORD }}
+        run: recce run --cloud
+
+      - name: Prepare Recce Summary
+        id: recce-summary
+        env:
+          BQ_PROJECT: ${{ steps.google-auth.outputs.project_id }}
+          BQ_DATASET: recce_ci
+          BQ_KEYFILE_PATH: ${{ steps.google-auth.outputs.credentials_file_path }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          RECCE_STATE_PASSWORD: ${{ secrets.RECCE_STATE_PASSWORD }}
+        run: |
+          set -eo pipefail
+
+          recce summary --cloud > recce_summary.md
+
+          # Add next steps message
+          cat << EOF >> recce_summary.md
+
+          ## Next Steps
+          To view detailed Recce results:
+          1. Checkout the PR branch: \`git checkout ${{ github.event.pull_request.head.ref }}\`
+          2. Launch the Recce server: \`recce server --review --cloud\`
+          3. Open http://localhost:8000 in your browser
+          EOF
+
+          # Truncate summary if it exceeds GitHub's comment size limit
+          if [[ $(wc -c < recce_summary.md) -ge 65535 ]]; then
+            truncate -s 65000 recce_summary.md
+            echo "
+            ... (Summary truncated due to size limit)
+
+            For the full summary, please check the Job Summary page: ${{github.server_url}}/${{github.repository}}/actions/runs/${{github.run_id}}
+            " >> recce_summary.md
+          fi
+
+      - name: Comment on pull request
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: recce_summary.md
+          comment_tag: recce
 ```
