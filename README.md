@@ -130,11 +130,12 @@ jobs:
 
 
 ### BigQuery with Service Account Key JSON
-This is the example of authentication via service account key JSON.
+This is the example of authentication via service account key JSON by [google-github-actions/auth](https://github.com/google-github-actions/auth?tab=readme-ov-file#inputs-service-account-key-json).
 
 Remember to set the secrets in GitHub:
 - `DBT_CLOUD_API_TOKEN`
-- `GCP_SERVICE_ACCOUNT_KEY_JSON`
+- `GCP_SERVICE_ACCOUNT_KEY_JSON` (suggest to minify it before storing it in the
+GitHub Secret)
 - `GH_TOKEN`
 - `RECCE_STATE_PASSWORD`
 
