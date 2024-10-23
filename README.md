@@ -146,7 +146,7 @@ And set dbt Cloud IDs while configuring the GitHub Action:
 
 Please check [profile.yml](https://github.com/DataRecce/jaffle-shop-bigquery/blob/main/profiles.yml) and [recce_ci.yml](https://github.com/DataRecce/jaffle-shop-bigquery/blob/main/.github/workflows/recce_ci.yml) in our example repo for more details.
 
-```
+```yaml
 name: Recce with dbt cloud
 on:
   pull_request:
