@@ -74,6 +74,7 @@ jobs:
           dbt_cloud_account_id: ${{ secrets.DBT_CLOUD_ACCOUNT_ID }}
           dbt_cloud_base_job_id: ${{ secrets.DBT_CLOUD_BASE_JOB_ID }}
           dbt_cloud_current_job_id: ${{ secrets.DBT_CLOUD_CURRENT_JOB_ID }}
+          generate_docs_override: true
           failure_on_error: true
 
       - name: Run Recce in cloud mode
@@ -177,6 +178,7 @@ jobs:
           dbt_cloud_account_id: 62083
           dbt_cloud_base_job_id: 747906
           dbt_cloud_current_job_id: 747907
+          generate_docs_override: true
           failure_on_error: true
 
       - uses: "google-github-actions/auth@v2"
