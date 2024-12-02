@@ -2,15 +2,15 @@ const axios = require('axios');
 const core = require('@actions/core');
 const fs = require('fs');
 const axiosRetry = require('axios-retry');
-const YAML = require('yaml')
+const YAML = require('yaml');
 
 axiosRetry(axios, {
   retryDelay: (retryCount) => retryCount * 1000,
   retries: 3,
   shouldResetTimeout: true,
   onRetry: (retryCount, error, requestConfig) => {
-    console.error('Error in request. Retrying...')
-  }
+    console.error('Error in request. Retrying...');
+  },
 });
 
 const RUN_STATUS = {
@@ -19,19 +19,19 @@ const RUN_STATUS = {
   3: 'Running',
   10: 'Success',
   20: 'Error',
-  30: 'Cancelled'
-}
+  30: 'Cancelled',
+};
 
 const DBT_CLOUD_API = axios.create({
   baseURL: `${core.getInput('dbt_cloud_url')}/api/v2/`,
   timeout: 5000, // 5 seconds
   headers: {
     'Authorization': `Token ${core.getInput('dbt_cloud_token')}`,
-    'Content-Type': 'application/json'
-  }
+    'Content-Type': 'application/json',
+  },
 });
 
-const ARTIFACTS = ['manifest.json', 'catalog.json']
+const ARTIFACTS = ['manifest.json', 'catalog.json'];
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -75,7 +75,9 @@ async function runJob(accountId, job_id) {
           input = [input];
         }
       } catch (e) {
-        core.setFailed(`Could not interpret ${key} correctly. Pass valid YAML in a string.\n Example:\n  property: '['a string', 'another string']'`);
+        core.setFailed(
+          `Could not interpret ${key} correctly. Pass valid YAML in a string.\n Example:\n  property: '['a string', 'another string']'`
+        );
         throw e;
       }
     }
@@ -86,21 +88,23 @@ async function runJob(accountId, job_id) {
     }
   }
 
-  core.debug(`Run job body:\n${JSON.stringify(body, null, 2)}`)
+  core.debug(`Run job body:\n${JSON.stringify(body, null, 2)}`);
 
-  let res = await DBT_CLOUD_API.post(`/accounts/${accountId}/jobs/${job_id}/run/`, body)
+  let res = await DBT_CLOUD_API.post(`/accounts/${accountId}/jobs/${job_id}/run/`, body);
   return res.data;
 }
 
 async function getJobRun(accountId, run_id) {
   try {
-    let res = await DBT_CLOUD_API.get(`/accounts/${accountId}/runs/${run_id}/?include_related=["run_steps"]`);
+    let res = await DBT_CLOUD_API.get(
+      `/accounts/${accountId}/runs/${run_id}/?include_related=["run_steps"]`
+    );
     return res.data;
   } catch (e) {
-    let errorMsg = e.toString()
+    let errorMsg = e.toString();
     if (errorMsg.search('timeout of ') != -1 && errorMsg.search(' exceeded') != -1) {
       // Special case for axios timeout
-      errorMsg += '. The dbt Cloud API is taking too long to respond.'
+      errorMsg += '. The dbt Cloud API is taking too long to respond.';
     }
 
     console.error('Error getting job information from dbt Cloud. ' + errorMsg);
@@ -108,30 +112,50 @@ async function getJobRun(accountId, run_id) {
 }
 
 async function getJobArtifacts(accountId, jobId) {
-  const saveDir = './target-base'
+  const saveDir = './target-base';
   if (!fs.existsSync(saveDir)) {
     fs.mkdirSync(saveDir);
   }
 
   for (const artifact of ARTIFACTS) {
-    core.info(`Fetching ${artifact} for the base environment`)
-    let res = await DBT_CLOUD_API.get(`/accounts/${accountId}/jobs/${jobId}/artifacts/${artifact}`);
-    core.info(`Saving ${artifact} in ${saveDir}`)
-    fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
+    try {
+      core.info(`Fetching ${artifact} for the base environment`);
+      let res = await DBT_CLOUD_API.get(
+        `/accounts/${accountId}/jobs/${jobId}/artifacts/${artifact}`
+      );
+      core.info(`Saving ${artifact} in ${saveDir}`);
+      fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
+    } catch (error) {
+      if (artifact === 'catalog.json' && error.response && error.response.status === 404) {
+        core.notice(`catalog.json not found in the base job. Skipping download.`);
+      } else {
+        throw error;
+      }
+    }
   }
 }
 
 async function getRunArtifacts(accountId, runId) {
-  const saveDir = './target'
+  const saveDir = './target';
   if (!fs.existsSync(saveDir)) {
     fs.mkdirSync(saveDir);
   }
 
   for (const artifact of ARTIFACTS) {
-    core.info(`Fetching ${artifact} for the current environment`)
-    let res = await DBT_CLOUD_API.get(`/accounts/${accountId}/runs/${runId}/artifacts/${artifact}`);
-    core.info(`Saving ${artifact} in ${saveDir}`)
-    fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
+    try {
+      core.info(`Fetching ${artifact} for the current environment`);
+      let res = await DBT_CLOUD_API.get(
+        `/accounts/${accountId}/runs/${runId}/artifacts/${artifact}`
+      );
+      core.info(`Saving ${artifact} in ${saveDir}`);
+      fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
+    } catch (error) {
+      if (artifact === 'catalog.json' && error.response && error.response.status === 404) {
+        core.notice(`catalog.json not found in the current run. Skipping download.`);
+      } else {
+        throw error;
+      }
+    }
   }
 }
 
@@ -165,7 +189,7 @@ async function executeAction() {
         break;
       }
     } else {
-      core.info('Not waiting for job to finish. Relevant run logs will be omitted.')
+      core.info('Not waiting for job to finish. Relevant run logs will be omitted.');
       break;
     }
   }
@@ -176,14 +200,14 @@ async function executeAction() {
 
   if (res.data.is_error) {
     // Wait for the step information to load in run
-    core.info('Loading logs...')
+    core.info('Loading logs...');
     await sleep(5000);
     res = await getJobRun(accountId, currentRunId);
     // Print logs
     for (let step of res.data.run_steps) {
-      core.info('# ' + step.name)
-      core.info(step.logs)
-      core.info('\n************\n')
+      core.info('# ' + step.name);
+      core.info(step.logs);
+      core.info('\n************\n');
     }
   }
 
@@ -194,8 +218,8 @@ async function executeAction() {
   await getRunArtifacts(accountId, currentRunId);
 
   const outputs = {
-    'git_sha': res.data['git_sha'],
-    'run_id': currentRunId
+    git_sha: res.data['git_sha'],
+    run_id: currentRunId,
   };
 
   return outputs;
@@ -208,13 +232,13 @@ async function main() {
     const run_id = outputs['run_id'];
 
     // GitHub Action output
-    core.info(`dbt Cloud Job commit SHA is ${git_sha}`)
+    core.info(`dbt Cloud Job commit SHA is ${git_sha}`);
     core.setOutput('git_sha', git_sha);
     core.setOutput('run_id', run_id);
   } catch (e) {
     // Always fail in this case because it is not a dbt error
     core.setFailed('There has been a problem with running your dbt cloud job:\n' + e.toString());
-    core.debug(e.stack)
+    core.debug(e.stack);
   }
 }
 
