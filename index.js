@@ -118,10 +118,20 @@ async function getJobArtifacts(accountId, jobId) {
   }
 
   for (const artifact of ARTIFACTS) {
-    core.info(`Fetching ${artifact} for the base environment`)
-    let res = await DBT_CLOUD_API.get(`/accounts/${accountId}/jobs/${jobId}/artifacts/${artifact}`);
-    core.info(`Saving ${artifact} in ${saveDir}`)
-    fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
+    try {
+      core.info(`Fetching ${artifact} for the base environment`);
+      let res = await DBT_CLOUD_API.get(
+        `/accounts/${accountId}/jobs/${jobId}/artifacts/${artifact}`
+      );
+      core.info(`Saving ${artifact} in ${saveDir}`);
+      fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
+    } catch (error) {
+      if (artifact === 'catalog.json' && error.response && error.response.status === 404) {
+        core.notice(`catalog.json not found in the base job. Skipping download.`);
+      } else {
+        throw error;
+      }
+    }
   }
 }
 
@@ -132,10 +142,20 @@ async function getRunArtifacts(accountId, runId) {
   }
 
   for (const artifact of ARTIFACTS) {
-    core.info(`Fetching ${artifact} for the current environment`)
-    let res = await DBT_CLOUD_API.get(`/accounts/${accountId}/runs/${runId}/artifacts/${artifact}`);
-    core.info(`Saving ${artifact} in ${saveDir}`)
-    fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
+    try {
+      core.info(`Fetching ${artifact} for the current environment`);
+      let res = await DBT_CLOUD_API.get(
+        `/accounts/${accountId}/runs/${runId}/artifacts/${artifact}`
+      );
+      core.info(`Saving ${artifact} in ${saveDir}`);
+      fs.writeFileSync(`${saveDir}/${artifact}`, JSON.stringify(res.data));
+    } catch (error) {
+      if (artifact === 'catalog.json' && error.response && error.response.status === 404) {
+        core.notice(`catalog.json not found in the current run. Skipping download.`);
+      } else {
+        throw error;
+      }
+    }
   }
 }
 
